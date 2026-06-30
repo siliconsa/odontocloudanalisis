@@ -42,11 +42,12 @@
 
 <script>
 const HISTORICO = [
-  {ts:"2026-06-30 13:31:36", activas:131, total:200, maxconn:500, locks:57, load1:45.40, load5:46.06, load15:45.28},
-  {ts:"2026-06-30 14:36:26", activas:107, total:180, maxconn:500, locks:70, load1:27.30, load5:30.71, load15:29.74},
-  {ts:"2026-06-30 15:02:40", activas:84, total:132, maxconn:500, locks:61, load1:17.36, load5:22.06, load15:25.04},
-  {ts:"2026-06-30 15:20:39", activas:39, total:111, maxconn:500, locks:14, load1:26.81, load5:27.41, load15:26.79},
-  {ts:"2026-06-30 15:23:55", activas:28, total:89, maxconn:500, locks:12, load1:19.59, load5:23.41, load15:25.31},
+  {ts:"2026-06-30 13:31:36", activas:131, total:200, maxconn:500, locks:57, load1:45.40, load5:46.06, load15:45.28, memtotal:0, memused:0, memavail:0, mempct:0, disktotal:0, diskused:0, diskpct:0},
+  {ts:"2026-06-30 14:36:26", activas:107, total:180, maxconn:500, locks:70, load1:27.30, load5:30.71, load15:29.74, memtotal:0, memused:0, memavail:0, mempct:0, disktotal:0, diskused:0, diskpct:0},
+  {ts:"2026-06-30 15:02:40", activas:84, total:132, maxconn:500, locks:61, load1:17.36, load5:22.06, load15:25.04, memtotal:0, memused:0, memavail:0, mempct:0, disktotal:0, diskused:0, diskpct:0},
+  {ts:"2026-06-30 15:20:39", activas:39, total:111, maxconn:500, locks:14, load1:26.81, load5:27.41, load15:26.79, memtotal:0, memused:0, memavail:0, mempct:0, disktotal:0, diskused:0, diskpct:0},
+  {ts:"2026-06-30 15:23:55", activas:28, total:89, maxconn:500, locks:12, load1:19.59, load5:23.41, load15:25.31, memtotal:0, memused:0, memavail:0, mempct:0, disktotal:0, diskused:0, diskpct:0},
+  {ts:"2026-06-30 15:38:44", activas:42, total:101, maxconn:500, locks:26, load1:24.63, load5:25.02, load15:24.70, memtotal:0, memused:0, memavail:0, mempct:0, disktotal:439, diskused:335, diskpct:81},
 ];
 
 const DASH_PASSWORD = "dcpcfix123*";
@@ -84,10 +85,14 @@ if (HISTORICO.length === 0) {
       <div class="kpi"><div class="value ${kpiClass(last.locks,5,30)}">${last.locks}</div><div class="label">Locks sin otorgar</div></div>
       <div class="kpi"><div class="value">${last.total} / ${last.maxconn}</div><div class="label">Conexiones totales / max</div></div>
       <div class="kpi"><div class="value ${kpiClass(last.load1,16,32)}">${last.load1}</div><div class="label">Load average (1 min)</div></div>
+      <div class="kpi"><div class="value ${kpiClass(last.mempct,75,90)}">${last.mempct}%</div><div class="label">Memoria usada (${last.memused}MB / ${last.memtotal}MB)</div></div>
+      <div class="kpi"><div class="value ${kpiClass(last.diskpct,80,90)}">${last.diskpct}%</div><div class="label">Disco usado (${last.diskused}GB / ${last.disktotal}GB)</div></div>
     </div>
     <div class="grid">
       <div class="card"><h2>Conexiones activas y locks en el tiempo</h2><canvas id="chartConn"></canvas></div>
       <div class="card"><h2>Load average en el tiempo</h2><canvas id="chartLoad"></canvas></div>
+      <div class="card"><h2>Uso de memoria (%) en el tiempo</h2><canvas id="chartMem"></canvas></div>
+      <div class="card"><h2>Uso de disco (%) en el tiempo</h2><canvas id="chartDisk"></canvas></div>
     </div>
   `;
 
@@ -116,6 +121,28 @@ if (HISTORICO.length === 0) {
       ]
     },
     options: { responsive:true, plugins:{legend:{position:'bottom'}} }
+  });
+
+  new Chart(document.getElementById('chartMem'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: '% Memoria usada', data: HISTORICO.map(r=>r.mempct), borderColor:'#2c7be5', backgroundColor:'rgba(44,123,229,0.15)', fill:true, tension:0.2 }
+      ]
+    },
+    options: { responsive:true, scales:{y:{min:0,max:100}}, plugins:{legend:{position:'bottom'}} }
+  });
+
+  new Chart(document.getElementById('chartDisk'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: '% Disco usado (/)', data: HISTORICO.map(r=>r.diskpct), borderColor:'#e0a800', backgroundColor:'rgba(224,168,0,0.15)', fill:true, tension:0.2 }
+      ]
+    },
+    options: { responsive:true, scales:{y:{min:0,max:100}}, plugins:{legend:{position:'bottom'}} }
   });
 }
 </script>
