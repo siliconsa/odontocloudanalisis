@@ -164,6 +164,7 @@
   const API_USER = "jsonrpc";
   const API_TOKEN = "fb474e372d6164644eaec50db6f4ddf5a5ea9ab71615d1122194ce8e9e57";
   const STATUS_OPEN = 1;
+  const PROJECT_IDS = [7, 8, 4]; // ODONTOCOS AUDITORIA, ODONTOCOS CURSOS, COSWEB
 
   const boardEl = document.getElementById("board");
   const statusEl = document.getElementById("status");
@@ -282,7 +283,13 @@
 
     try {
       const [projectsRaw] = await callBatch([{ method: "getAllProjects" }]);
-      const projects = (projectsRaw || []).filter(function (p) { return p.is_active === "1" || p.is_active === 1; });
+      const projects = (projectsRaw || [])
+        .filter(function (p) {
+          const isActive = p.is_active === "1" || p.is_active === 1;
+          const isSelected = PROJECT_IDS.includes(Number(p.id));
+          return isActive && isSelected;
+        })
+        .sort(function (a, b) { return PROJECT_IDS.indexOf(Number(a.id)) - PROJECT_IDS.indexOf(Number(b.id)); });
 
       const detailRequests = [];
       projects.forEach(function (p) {
