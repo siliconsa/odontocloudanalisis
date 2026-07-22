@@ -1,1 +1,321 @@
-Dashboard movido a infraestructura interna (Proxmox VPS). Pendiente de migracion.
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard de Tickets - CosCloud</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --card-bg: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 {
+    font-size: 1.25rem;
+    margin: 0;
+  }
+  header .meta {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  #refresh-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  #refresh-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  main {
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  #status {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+  }
+  #status.loading { background: #eff6ff; color: #1d4ed8; }
+  #status.error { background: #fef2f2; color: #b91c1c; white-space: pre-wrap; }
+  #status.hidden { display: none; }
+
+  .project {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .project-header {
+    padding: 14px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+  .project-header h2 {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+  .project-header .count {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.8rem;
+  }
+  .project-body {
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    padding: 14px 18px;
+  }
+  .project.collapsed .project-body { display: none; }
+  .column {
+    min-width: 240px;
+    flex: 1 0 240px;
+  }
+  .column h3 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    margin: 0 0 8px 0;
+  }
+  .task {
+    background: #fafafa;
+    border: 1px solid var(--border);
+    border-left: 4px solid #9ca3af;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+  }
+  .task a {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .task a:hover { text-decoration: underline; }
+  .task .task-id {
+    color: var(--muted);
+    font-weight: 400;
+  }
+  .empty-column {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-style: italic;
+  }
+  .no-projects {
+    color: var(--muted);
+    text-align: center;
+    padding: 40px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Dashboard de Tickets</h1>
+    <div class="meta">Fuente: Kanboard (tickets.pcfix.com.ar) &middot; <span id="last-update">-</span></div>
+  </div>
+  <button id="refresh-btn">Actualizar</button>
+</header>
+
+<main>
+  <div id="status" class="hidden"></div>
+  <div id="board"></div>
+</main>
+
+<script>
+(function () {
+  // --- Configuracion de conexion a Kanboard ---
+  const API_ENDPOINT = "https://tickets.pcfix.com.ar/jsonrpc.php";
+  const API_USER = "jsonrpc";
+  const API_TOKEN = "fb474e372d6164644eaec50db6f4ddf5a5ea9ab71615d1122194ce8e9e57";
+  const STATUS_OPEN = 1;
+
+  const boardEl = document.getElementById("board");
+  const statusEl = document.getElementById("status");
+  const refreshBtn = document.getElementById("refresh-btn");
+  const lastUpdateEl = document.getElementById("last-update");
+
+  function setStatus(kind, message) {
+    if (!message) {
+      statusEl.className = "hidden";
+      statusEl.textContent = "";
+      return;
+    }
+    statusEl.className = kind;
+    statusEl.textContent = message;
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? "").replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  async function callBatch(requests) {
+    const body = requests.map(function (r, i) {
+      return { jsonrpc: "2.0", method: r.method, params: r.params || {}, id: i + 1 };
+    });
+    const res = await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Basic " + btoa(API_USER + ":" + API_TOKEN)
+      },
+      body: JSON.stringify(body.length === 1 ? body[0] : body)
+    });
+    if (!res.ok) {
+      throw new Error("HTTP " + res.status + " al llamar a Kanboard");
+    }
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : [data];
+    list.forEach(function (item) {
+      if (item.error) {
+        throw new Error("Kanboard API: " + item.error.message);
+      }
+    });
+    return list.map(function (item) { return item.result; });
+  }
+
+  function renderBoard(projects, columnsByProject, tasksByProject) {
+    boardEl.innerHTML = "";
+
+    if (!projects.length) {
+      boardEl.innerHTML = '<div class="no-projects">No hay proyectos activos.</div>';
+      return;
+    }
+
+    projects.forEach(function (project) {
+      const columns = columnsByProject[project.id] || [];
+      const tasks = tasksByProject[project.id] || [];
+
+      const projectEl = document.createElement("div");
+      projectEl.className = "project";
+
+      const header = document.createElement("div");
+      header.className = "project-header";
+      header.innerHTML =
+        "<h2>" + escapeHtml(project.name) + "</h2>" +
+        '<span class="count">' + tasks.length + " abiertos</span>";
+      header.addEventListener("click", function () {
+        projectEl.classList.toggle("collapsed");
+      });
+      projectEl.appendChild(header);
+
+      const bodyEl = document.createElement("div");
+      bodyEl.className = "project-body";
+
+      columns.forEach(function (col) {
+        const colTasks = tasks
+          .filter(function (t) { return String(t.column_id) === String(col.id); })
+          .sort(function (a, b) { return Number(a.position) - Number(b.position); });
+
+        const colEl = document.createElement("div");
+        colEl.className = "column";
+        colEl.innerHTML = "<h3>" + escapeHtml(col.title) + " (" + colTasks.length + ")</h3>";
+
+        if (!colTasks.length) {
+          const emptyEl = document.createElement("div");
+          emptyEl.className = "empty-column";
+          emptyEl.textContent = "Sin tareas";
+          colEl.appendChild(emptyEl);
+        } else {
+          colTasks.forEach(function (task) {
+            const taskEl = document.createElement("div");
+            taskEl.className = "task";
+            if (task.color && task.color.border) {
+              taskEl.style.borderLeftColor = task.color.border;
+            }
+            taskEl.innerHTML =
+              '<a href="' + escapeHtml(task.url) + '" target="_blank" rel="noopener">' +
+              escapeHtml(task.title) +
+              '</a> <span class="task-id">#' + escapeHtml(task.id) + "</span>";
+            colEl.appendChild(taskEl);
+          });
+        }
+
+        bodyEl.appendChild(colEl);
+      });
+
+      projectEl.appendChild(bodyEl);
+      boardEl.appendChild(projectEl);
+    });
+  }
+
+  async function loadDashboard() {
+    refreshBtn.disabled = true;
+    setStatus("loading", "Cargando tickets desde Kanboard...");
+
+    try {
+      const [projectsRaw] = await callBatch([{ method: "getAllProjects" }]);
+      const projects = (projectsRaw || []).filter(function (p) { return p.is_active === "1" || p.is_active === 1; });
+
+      const detailRequests = [];
+      projects.forEach(function (p) {
+        detailRequests.push({ method: "getColumns", params: { project_id: Number(p.id) } });
+        detailRequests.push({ method: "getAllTasks", params: { project_id: Number(p.id), status_id: STATUS_OPEN } });
+      });
+
+      const results = detailRequests.length ? await callBatch(detailRequests) : [];
+
+      const columnsByProject = {};
+      const tasksByProject = {};
+      projects.forEach(function (p, i) {
+        columnsByProject[p.id] = (results[i * 2] || []).sort(function (a, b) {
+          return Number(a.position) - Number(b.position);
+        });
+        tasksByProject[p.id] = results[i * 2 + 1] || [];
+      });
+
+      renderBoard(projects, columnsByProject, tasksByProject);
+      setStatus(null);
+      lastUpdateEl.textContent = "Actualizado " + new Date().toLocaleString("es-AR");
+    } catch (err) {
+      setStatus("error", "No se pudieron cargar los tickets.\n" + err.message +
+        "\n\nSi el error es de red/CORS, verifica que el servidor de Kanboard permita solicitudes desde este origen.");
+    } finally {
+      refreshBtn.disabled = false;
+    }
+  }
+
+  refreshBtn.addEventListener("click", loadDashboard);
+  loadDashboard();
+})();
+</script>
+
+</body>
+</html>
